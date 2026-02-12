@@ -14,6 +14,16 @@ CLUSTER_NAME="keycloak-cluster"
 NAMESPACE="keycloak"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+FORCE_K3S=false
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+--force-k3s) FORCE_K3S=true ;;
+        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    esac
+    shift
+done
+
 # Logging functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -67,28 +77,30 @@ check_prerequisites() {
     log_success "All prerequisites are installed"
 }
 
-# Setup Kubernetes cluster
 setup_kubernetes_cluster() {
     log_info "Setting up Kubernetes cluster..."
-    
-    # Check for available cluster options in order of preference
-    if kubectl config current-context 2>/dev/null | grep -q "rancher-desktop"; then
-        log_info "Using Rancher Desktop (preferred option)"
-        setup_rancher_desktop
-    elif command_exists kind; then
-        log_info "Using kind cluster"
-        setup_kind_cluster
-    elif command_exists minikube; then
-        log_info "Using minikube cluster"
-        setup_minikube_cluster
-    else
-        log_error "No supported Kubernetes cluster tool found!"
-        log_info "Please install one of the following:"
-        log_info "  - Rancher Desktop (preferred): https://rancherdesktop.io/"
-        log_info "  - kind: https://kind.sigs.k8s.io/"
-        log_info "  - minikube: https://minikube.sigs.k8s.io/"
-        exit 1
+
+    if [ "$FORCE_K3S" = true ]; then
+        log_info "Force mode enabled: provisioning k3s"
+        setup_k3s_cluster
+        return 0
     fi
+
+    # Normal detection logic
+    if kubectl cluster-info >/dev/null 2>&1; then
+        CURRENT_CONTEXT=$(kubectl config current-context 2>/dev/null || echo "unknown")
+        log_success "Existing Kubernetes cluster detected (context: ${CURRENT_CONTEXT})"
+        return 0
+    fi
+
+    if kubectl config get-contexts -o name | grep -q "^rancher-desktop$"; then
+        log_info "Using Rancher Desktop (preferred option)"
+        kubectl config use-context rancher-desktop
+        return 0
+    fi
+
+    log_info "No cluster detected. Provisioning k3s..."
+    setup_k3s_cluster
 }
 
 # Setup Rancher Desktop
@@ -108,61 +120,32 @@ setup_rancher_desktop() {
     log_success "Rancher Desktop cluster is ready"
 }
 
-# Setup kind cluster
-setup_kind_cluster() {
-    log_info "Setting up kind cluster..."
-    
-    # Create kind cluster config
-    cat <<EOF > /tmp/kind-config.yaml
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: ${CLUSTER_NAME}
-nodes:
-- role: control-plane
-  kubeadmConfigPatches:
-  - |
-    kind: InitConfiguration
-    nodeRegistration:
-      kubeletExtraArgs:
-        node-labels: "ingress-ready=true"
-  extraPortMappings:
-  - containerPort: 8443
-    hostPort: 8443
-    protocol: TCP
-networking:
-  disableDefaultCNI: false
-EOF
-
-    # Create cluster if it doesn't exist
-    if ! kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
-        log_info "Creating kind cluster: ${CLUSTER_NAME}"
-        kind create cluster --config /tmp/kind-config.yaml
-    else
-        log_info "Kind cluster ${CLUSTER_NAME} already exists"
+setup_k3s_cluster() {
+    if ! command_exists k3s; then
+        log_info "Installing k3s..."
+        curl -sfL https://get.k3s.io | sh -
     fi
-    
-    # Set kubectl context
-    kubectl cluster-info --context kind-${CLUSTER_NAME}
-    
-    log_success "Kind cluster is ready"
-}
 
-# Setup minikube cluster
-setup_minikube_cluster() {
-    log_info "Setting up minikube cluster..."
-    
-    # Start minikube if not running
-    if ! minikube status >/dev/null 2>&1; then
-        log_info "Starting minikube cluster"
-        minikube start --driver=docker --memory=4096 --cpus=2
-    else
-        log_info "Minikube cluster is already running"
-    fi
-    
-    # Enable necessary addons
-    minikube addons enable ingress
-    
-    log_success "Minikube cluster is ready"
+    log_info "Starting k3s service..."
+    sudo systemctl enable k3s
+    sudo systemctl start k3s
+
+    log_info "Waiting for k3s kubeconfig..."
+    until sudo test -f /etc/rancher/k3s/k3s.yaml; do
+        sleep 2
+    done
+
+    log_info "Configuring kubeconfig..."
+    mkdir -p $HOME/.kube
+    sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
+    sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+    export KUBECONFIG=$HOME/.kube/config
+
+    log_info "Waiting for node to be Ready..."
+    kubectl wait --for=condition=Ready nodes --all --timeout=180s
+
+    log_success "k3s cluster is ready"
 }
 
 # Setup Pulumi

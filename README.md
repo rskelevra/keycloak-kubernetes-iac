@@ -24,10 +24,10 @@ Spins up a complete Keycloak identity server with:
 - ** Security First**: HTTPS-only access with self-signed certificates
 - ** Full Automation**: One-command deployment and teardown
 - ** Infrastructure as Code**: Pulumi with Go for type-safe infrastructure
-- ** Multiple K8s Options**: Rancher Desktop (preferred), kind, minikube
-- ** Security Hardening**: Network policies, non-root containers, resource limits
+- ** Multiple K8s Options**: Rancher Desktop (preferred), k3s
+- ** Security Hardening**: non-root containers, resource limits
 - ** Comprehensive Monitoring**: Health checks, validation scripts, logging
-- ** Production Ready**: PostgreSQL backend, persistent storage, proper secrets management
+- ** Production Ready**: PostgreSQL backend, proper secrets management
 
 ## Architecture
 
@@ -162,7 +162,6 @@ kubectl logs deployment/postgres -n keycloak
 - **PostgreSQL** instead of H2 for production readiness
 - **Rancher Desktop preferred** as requested, with smart fallbacks
 - **ClusterIP** service type (works on all local K8s)
-- **Network policies** for pod isolation
 - **Self-signed certs** (appropriate for local development)
 
 **What makes this production-ready:**
