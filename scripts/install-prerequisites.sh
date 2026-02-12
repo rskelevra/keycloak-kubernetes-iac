@@ -283,7 +283,7 @@ main() {
     log_info "Next steps:"
     echo "  1. Restart your terminal or source your shell profile"
     echo "  2. If using Rancher Desktop, start it and enable Kubernetes"
-    echo "  3. Run: ./setup.sh"
+    echo "  3. Run: ./scripts/setup.sh"
     echo ""
     
     if [ ${#missing[@]} -eq 0 ]; then

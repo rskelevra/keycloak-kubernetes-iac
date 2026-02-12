@@ -123,15 +123,12 @@ Then open https://keycloak.local:8443/admin/ and login with the credentials abov
 │   ├── install-prerequisites.sh
 │   ├── validate.sh        # Health checks
 │   └── cleanup.sh         # Complete teardown
-├── security/              # Network policies
-└── docs/                  # Architecture & troubleshooting
-```
 
 ## Cleanup
 
 When you're done:
 ```bash
-./cleanup.sh
+./scripts/cleanup.sh
 ```
 
 ## Troubleshooting
@@ -151,8 +148,6 @@ kubectl logs deployment/keycloak -n keycloak
 kubectl get pods -n keycloak
 kubectl logs deployment/postgres -n keycloak  
 ```
-
-More detailed troubleshooting in `docs/TROUBLESHOOTING.md`.
 
 ## Assignment Details
 
@@ -178,5 +173,3 @@ More detailed troubleshooting in `docs/TROUBLESHOOTING.md`.
 - Full automation with validation
 
 ---
-
-**Questions?** Check `docs/ARCHITECTURE.md` for technical details or open an issue.

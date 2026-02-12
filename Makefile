@@ -34,7 +34,7 @@ install:
 ## Deploy complete Keycloak infrastructure
 deploy:
 	@echo "$(GREEN)Deploying Keycloak infrastructure...$(NC)"
-	@./setup.sh
+	@./scripts/setup.sh
 
 ## Validate deployment health and status
 validate:
