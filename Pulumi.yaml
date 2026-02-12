@@ -1,0 +1,11 @@
+name: keycloak-k8s-deployment
+runtime: go
+description: Secure Keycloak deployment on local Kubernetes cluster with Infrastructure as Code
+
+config:
+  pulumi:tags:
+    value:
+      Environment: development
+      Project: keycloak-deployment
+      Owner: devops-team
+      Purpose: interview-assignment

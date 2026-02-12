@@ -1,0 +1,114 @@
+# Pod Security Standards for Keycloak Deployment
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-standards
+  namespace: keycloak
+data:
+  security-standards.md: |
+    # Pod Security Standards
+
+    ## Security Context Requirements
+
+    ### Keycloak Container
+    - **Run as Non-Root**: Yes (UID: 1000)
+    - **Read-Only Root Filesystem**: No (Keycloak needs write access)
+    - **Drop Capabilities**: ALL
+    - **Seccomp Profile**: runtime/default
+    - **SELinux**: Disabled for compatibility
+
+    ### PostgreSQL Container  
+    - **Run as Non-Root**: Yes (UID: 999)
+    - **Read-Only Root Filesystem**: No (Database needs write access)
+    - **Drop Capabilities**: ALL
+    - **Seccomp Profile**: runtime/default
+
+    ## Resource Limits
+
+    ### Keycloak
+    - **CPU Request**: 500m
+    - **CPU Limit**: 1000m
+    - **Memory Request**: 512Mi
+    - **Memory Limit**: 1Gi
+
+    ### PostgreSQL
+    - **CPU Request**: 250m
+    - **CPU Limit**: 500m
+    - **Memory Request**: 256Mi
+    - **Memory Limit**: 512Mi
+
+    ## Network Security
+
+    ### Allowed Communications
+    - Keycloak → PostgreSQL (port 5432)
+    - External → Keycloak (port 8443, HTTPS only)
+    - All pods → DNS (port 53)
+
+    ### Denied Communications
+    - Pod-to-pod communication (except explicit allowlist)
+    - External egress (except DNS)
+    - Cross-namespace communication
+    - Insecure protocols (HTTP, plain text)
+
+    ## Volume Security
+
+    ### Secrets
+    - TLS certificates: Read-only mount
+    - Database credentials: Environment variables only
+    - Admin credentials: Environment variables only
+
+    ### Storage
+    - Temporary volumes: emptyDir with size limits
+    - No persistent volumes in demo configuration
+    - Production: Use encrypted persistent volumes
+
+    ## Image Security
+
+    ### Base Images
+    - Keycloak: quay.io/keycloak/keycloak:23.0 (official)
+    - PostgreSQL: postgres:15-alpine (minimal attack surface)
+
+    ### Image Policies
+    - Always pull latest patches
+    - Scan images for vulnerabilities
+    - Use specific version tags (not 'latest')
+    - Verify image signatures when possible
+
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: keycloak-limits
+  namespace: keycloak
+spec:
+  limits:
+  - default:
+      cpu: "1000m"
+      memory: "1Gi"
+    defaultRequest:
+      cpu: "100m"
+      memory: "128Mi"
+    max:
+      cpu: "2000m"
+      memory: "2Gi"
+    min:
+      cpu: "50m"
+      memory: "64Mi"
+    type: Container
+
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: keycloak-quota
+  namespace: keycloak
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: "2Gi"
+    limits.cpu: "4"
+    limits.memory: "4Gi"
+    pods: "10"
+    secrets: "10"
+    services: "5"
