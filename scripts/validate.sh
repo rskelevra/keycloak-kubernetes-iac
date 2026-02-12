@@ -291,8 +291,8 @@ display_summary() {
         
         # Get admin credentials if available
         if command_exists pulumi; then
-            local admin_username=$(pulumi stack output admin-username 2>/dev/null || echo "admin")
-            local admin_password=$(pulumi stack output admin-password 2>/dev/null || echo "Check Pulumi outputs")
+            local admin_username=$(pulumi stack output keycloak-admin-username 2>/dev/null || echo "admin")
+            local admin_password=$(pulumi stack output keycloak-admin-password 2>/dev/null || echo "Check Pulumi outputs")
             
             echo "Admin Credentials:"
             echo "  Username: $admin_username"

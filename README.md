@@ -65,7 +65,7 @@ Spins up a complete Keycloak identity server with:
 # Clone and run
 git clone <your-repo-url>
 cd keycloak-kubernetes-iac
-./setup.sh
+./scripts/setup.sh
 ```
 
 That's it! The script will:

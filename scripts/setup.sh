@@ -203,9 +203,6 @@ deploy_infrastructure() {
 wait_for_deployment() {
     log_info "Waiting for Keycloak to be ready..."
     
-    # Wait for namespace
-    kubectl wait --for=condition=Ready namespace/${NAMESPACE} --timeout=60s
-    
     # Wait for PostgreSQL
     kubectl wait --for=condition=available --timeout=300s deployment/postgres -n ${NAMESPACE}
     

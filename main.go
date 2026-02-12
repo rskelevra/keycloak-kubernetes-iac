@@ -120,7 +120,7 @@ func main() {
 			return err
 		}
 
-		// Deploy PostgreSQL database (simplified for compatibility)
+		// Deploy PostgreSQL database
 		_, err = appsv1.NewDeployment(ctx, "postgres-deployment", &appsv1.DeploymentArgs{
 			Metadata: &metav1.ObjectMetaArgs{
 				Name:      pulumi.String("postgres"),
@@ -175,6 +175,19 @@ func main() {
 												Key:  pulumi.String("password"),
 											},
 										},
+									},
+								},
+								SecurityContext: &corev1.SecurityContextArgs{
+									AllowPrivilegeEscalation: pulumi.Bool(false),
+								},
+								Resources: &corev1.ResourceRequirementsArgs{
+									Requests: pulumi.StringMap{
+										"cpu":    pulumi.String("250m"),
+										"memory": pulumi.String("256Mi"),
+									},
+									Limits: pulumi.StringMap{
+										"cpu":    pulumi.String("500m"),
+										"memory": pulumi.String("512Mi"),
 									},
 								},
 							},
@@ -239,11 +252,12 @@ func main() {
 								Image: pulumi.String("quay.io/keycloak/keycloak:23.0"),
 								Args: pulumi.StringArray{
 									pulumi.String("start"),
-									pulumi.String("--hostname=keycloak.local"),
-									pulumi.String("--https-certificate-file=/opt/keycloak/conf/tls.crt"),
-									pulumi.String("--https-certificate-key-file=/opt/keycloak/conf/tls.key"),
+									pulumi.String("--hostname-url=https://keycloak.local:8443"),
+									pulumi.String("--https-certificate-file=/opt/keycloak/certs/tls.crt"),
+									pulumi.String("--https-certificate-key-file=/opt/keycloak/certs/tls.key"),
 									pulumi.String("--https-port=8443"),
 									pulumi.String("--http-enabled=false"),
+									pulumi.String("--proxy=edge"),
 								},
 								Ports: corev1.ContainerPortArray{
 									&corev1.ContainerPortArgs{
@@ -296,15 +310,11 @@ func main() {
 											},
 										},
 									},
-									&corev1.EnvVarArgs{
-										Name:  pulumi.String("KC_PROXY"),
-										Value: pulumi.String("edge"),
-									},
 								},
 								VolumeMounts: corev1.VolumeMountArray{
 									&corev1.VolumeMountArgs{
 										Name:      pulumi.String("tls-certs"),
-										MountPath: pulumi.String("/opt/keycloak/conf"),
+										MountPath: pulumi.String("/opt/keycloak/certs"),
 										ReadOnly:  pulumi.Bool(true),
 									},
 								},
@@ -325,6 +335,21 @@ func main() {
 									},
 									InitialDelaySeconds: pulumi.Int(60),
 									PeriodSeconds:       pulumi.Int(30),
+								},
+								SecurityContext: &corev1.SecurityContextArgs{
+									RunAsNonRoot:             pulumi.Bool(true),
+									RunAsUser:                pulumi.Int(1000),
+									AllowPrivilegeEscalation: pulumi.Bool(false),
+								},
+								Resources: &corev1.ResourceRequirementsArgs{
+									Requests: pulumi.StringMap{
+										"cpu":    pulumi.String("500m"),
+										"memory": pulumi.String("512Mi"),
+									},
+									Limits: pulumi.StringMap{
+										"cpu":    pulumi.String("1000m"),
+										"memory": pulumi.String("1Gi"),
+									},
 								},
 							},
 						},
@@ -369,7 +394,7 @@ func main() {
 			return err
 		}
 
-		// Create Network Policy for security
+		// Network Policy: Keycloak - allow HTTPS ingress, DB + DNS egress
 		_, err = networkingv1.NewNetworkPolicy(ctx, "keycloak-network-policy", &networkingv1.NetworkPolicyArgs{
 			Metadata: &metav1.ObjectMetaArgs{
 				Name:      pulumi.String("keycloak-network-policy"),
@@ -396,6 +421,7 @@ func main() {
 					},
 				},
 				Egress: networkingv1.NetworkPolicyEgressRuleArray{
+					// Allow traffic to PostgreSQL
 					&networkingv1.NetworkPolicyEgressRuleArgs{
 						To: networkingv1.NetworkPolicyPeerArray{
 							&networkingv1.NetworkPolicyPeerArgs{
@@ -413,13 +439,13 @@ func main() {
 							},
 						},
 					},
-					// Allow DNS
+					// Allow DNS resolution
 					&networkingv1.NetworkPolicyEgressRuleArgs{
 						To: networkingv1.NetworkPolicyPeerArray{
 							&networkingv1.NetworkPolicyPeerArgs{
 								NamespaceSelector: &metav1.LabelSelectorArgs{
 									MatchLabels: pulumi.StringMap{
-										"name": pulumi.String("kube-system"),
+										"kubernetes.io/metadata.name": pulumi.String("kube-system"),
 									},
 								},
 							},
@@ -429,8 +455,95 @@ func main() {
 								Port:     pulumi.Int(53),
 								Protocol: pulumi.String("UDP"),
 							},
+							&networkingv1.NetworkPolicyPortArgs{
+								Port:     pulumi.Int(53),
+								Protocol: pulumi.String("TCP"),
+							},
 						},
 					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Network Policy: PostgreSQL - only allow connections from Keycloak
+		_, err = networkingv1.NewNetworkPolicy(ctx, "postgres-network-policy", &networkingv1.NetworkPolicyArgs{
+			Metadata: &metav1.ObjectMetaArgs{
+				Name:      pulumi.String("postgres-network-policy"),
+				Namespace: namespace.Metadata.Name(),
+			},
+			Spec: &networkingv1.NetworkPolicySpecArgs{
+				PodSelector: &metav1.LabelSelectorArgs{
+					MatchLabels: pulumi.StringMap{
+						"app": pulumi.String("postgres"),
+					},
+				},
+				PolicyTypes: pulumi.StringArray{
+					pulumi.String("Ingress"),
+					pulumi.String("Egress"),
+				},
+				Ingress: networkingv1.NetworkPolicyIngressRuleArray{
+					&networkingv1.NetworkPolicyIngressRuleArgs{
+						From: networkingv1.NetworkPolicyPeerArray{
+							&networkingv1.NetworkPolicyPeerArgs{
+								PodSelector: &metav1.LabelSelectorArgs{
+									MatchLabels: pulumi.StringMap{
+										"app": pulumi.String("keycloak"),
+									},
+								},
+							},
+						},
+						Ports: networkingv1.NetworkPolicyPortArray{
+							&networkingv1.NetworkPolicyPortArgs{
+								Port:     pulumi.Int(5432),
+								Protocol: pulumi.String("TCP"),
+							},
+						},
+					},
+				},
+				Egress: networkingv1.NetworkPolicyEgressRuleArray{
+					// Allow DNS resolution
+					&networkingv1.NetworkPolicyEgressRuleArgs{
+						To: networkingv1.NetworkPolicyPeerArray{
+							&networkingv1.NetworkPolicyPeerArgs{
+								NamespaceSelector: &metav1.LabelSelectorArgs{
+									MatchLabels: pulumi.StringMap{
+										"kubernetes.io/metadata.name": pulumi.String("kube-system"),
+									},
+								},
+							},
+						},
+						Ports: networkingv1.NetworkPolicyPortArray{
+							&networkingv1.NetworkPolicyPortArgs{
+								Port:     pulumi.Int(53),
+								Protocol: pulumi.String("UDP"),
+							},
+							&networkingv1.NetworkPolicyPortArgs{
+								Port:     pulumi.Int(53),
+								Protocol: pulumi.String("TCP"),
+							},
+						},
+					},
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// Network Policy: Default deny-all for namespace
+		_, err = networkingv1.NewNetworkPolicy(ctx, "default-deny-all", &networkingv1.NetworkPolicyArgs{
+			Metadata: &metav1.ObjectMetaArgs{
+				Name:      pulumi.String("default-deny-all"),
+				Namespace: namespace.Metadata.Name(),
+			},
+			Spec: &networkingv1.NetworkPolicySpecArgs{
+				PodSelector: &metav1.LabelSelectorArgs{},
+				PolicyTypes: pulumi.StringArray{
+					pulumi.String("Ingress"),
+					pulumi.String("Egress"),
 				},
 			},
 		})

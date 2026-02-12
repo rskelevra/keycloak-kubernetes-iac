@@ -126,8 +126,8 @@ console: port-forward
 	@echo "$(GREEN)Opening Keycloak admin console...$(NC)"
 	@echo "  URL: https://keycloak.local:8443/admin/"
 	@if command -v pulumi >/dev/null 2>&1; then \
-		echo "  Username: $$(pulumi stack output admin-username 2>/dev/null || echo 'admin')"; \
-		echo "  Password: $$(pulumi stack output admin-password 2>/dev/null || echo 'Check pulumi outputs')"; \
+		echo "  Username: $$(pulumi stack output keycloak-admin-username 2>/dev/null || echo 'admin')"; \
+		echo "  Password: $$(pulumi stack output keycloak-admin-password 2>/dev/null || echo 'Check pulumi outputs')"; \
 	fi
 	@if command -v xdg-open >/dev/null 2>&1; then \
 		xdg-open https://keycloak.local:8443/admin/ 2>/dev/null & \
@@ -245,8 +245,8 @@ info:
 	@echo ""
 	@if command -v pulumi >/dev/null 2>&1 && pulumi stack ls 2>/dev/null | grep -q "$(STACK)"; then \
 		echo "  👤 Admin Credentials:"; \
-		echo "     Username: $$(pulumi stack output admin-username 2>/dev/null || echo 'admin')"; \
-		echo "     Password: $$(pulumi stack output admin-password 2>/dev/null || echo 'Check pulumi outputs')"; \
+		echo "     Username: $$(pulumi stack output keycloak-admin-username 2>/dev/null || echo 'admin')"; \
+		echo "     Password: $$(pulumi stack output keycloak-admin-password 2>/dev/null || echo 'Check pulumi outputs')"; \
 	fi
 	@echo ""
 	@echo "  📝 Useful Commands:"
