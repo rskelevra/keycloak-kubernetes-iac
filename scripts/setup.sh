@@ -72,7 +72,7 @@ setup_kubernetes_cluster() {
     log_info "Setting up Kubernetes cluster..."
     
     # Check for available cluster options in order of preference
-    if command_exists rancher-desktop; then
+    if kubectl config current-context 2>/dev/null | grep -q "rancher-desktop"; then
         log_info "Using Rancher Desktop (preferred option)"
         setup_rancher_desktop
     elif command_exists kind; then
