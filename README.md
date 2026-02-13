@@ -16,7 +16,7 @@ Spins up a complete Keycloak identity server with:
 - HTTPS encryption (self-signed certificates)
 - PostgreSQL database backend  
 - Auto-generated admin credentials
-- Security hardening (network policies, non-root containers)
+- Security hardening ( non-root containers)
 - One-command deployment and cleanup
 
 ###  Key Features
@@ -24,7 +24,11 @@ Spins up a complete Keycloak identity server with:
 - ** Security First**: HTTPS-only access with self-signed certificates
 - ** Full Automation**: One-command deployment and teardown
 - ** Infrastructure as Code**: Pulumi with Go for type-safe infrastructure
+<<<<<<< HEAD
 - ** Multiple K8s Options**: Rancher Desktop (preferred), k3s
+=======
+- ** Multiple K8s Options**: Rancher Desktop (preferred), kind, minikube
+>>>>>>> d44bcc1 (updated to use k3d-rancher preferred)
 - ** Security Hardening**: non-root containers, resource limits
 - ** Comprehensive Monitoring**: Health checks, validation scripts, logging
 - ** Production Ready**: PostgreSQL backend, proper secrets management
@@ -50,7 +54,7 @@ Spins up a complete Keycloak identity server with:
 │  │  │  │ (Self-sign) │    │ (Generated) │                │
 │  │  │  └─────────────┘    └─────────────┘                │
 │  │  │                                                     │
-│  │  │         Network Policies (Security)                 │
+│  │  │                                                     │
 │  │  └─────────────────────────────────────────────────────┤
 │  └─────────────────────────────────────────────────────────┤
 │                                                             │
@@ -111,7 +115,6 @@ Then open https://keycloak.local:8443/admin/ and login with the credentials abov
 - **Keycloak 23.0** - Main identity server
 - **PostgreSQL 15** - Database (not the default H2)
 - **TLS certificates** - For HTTPS (self-signed)
-- **Network policies** - Restricts pod communication  
 - **Secrets** - Auto-generated passwords stored securely
 
 ## Project Structure
