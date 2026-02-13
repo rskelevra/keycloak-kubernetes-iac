@@ -14,16 +14,6 @@ CLUSTER_NAME="keycloak-cluster"
 NAMESPACE="keycloak"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-FORCE_K3S=false
-
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
---force-k3s) FORCE_K3S=true ;;
-        *) echo "Unknown parameter passed: $1"; exit 1 ;;
-    esac
-    shift
-done
-
 # Logging functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -77,75 +67,98 @@ check_prerequisites() {
     log_success "All prerequisites are installed"
 }
 
+# Setup Kubernetes cluster
 setup_kubernetes_cluster() {
     log_info "Setting up Kubernetes cluster..."
-
-    if [ "$FORCE_K3S" = true ]; then
-        log_info "Force mode enabled: provisioning k3s"
-        setup_k3s_cluster
-        return 0
-    fi
-
-    # Normal detection logic
+    
+    # First, check if any cluster is already available and working
     if kubectl cluster-info >/dev/null 2>&1; then
-        CURRENT_CONTEXT=$(kubectl config current-context 2>/dev/null || echo "unknown")
-        log_success "Existing Kubernetes cluster detected (context: ${CURRENT_CONTEXT})"
-        return 0
-    fi
-
-    if kubectl config get-contexts -o name | grep -q "^rancher-desktop$"; then
-        log_info "Using Rancher Desktop (preferred option)"
-        kubectl config use-context rancher-desktop
-        return 0
-    fi
-
-    log_info "No cluster detected. Provisioning k3s..."
-    setup_k3s_cluster
-}
-
-# Setup Rancher Desktop
-setup_rancher_desktop() {
-    log_info "Configuring Rancher Desktop..."
-    
-    # Check if Rancher Desktop is running
-    if ! kubectl cluster-info >/dev/null 2>&1; then
-        log_warning "Rancher Desktop cluster is not ready. Please:"
-        log_info "  1. Start Rancher Desktop"
-        log_info "  2. Enable Kubernetes in settings"
-        log_info "  3. Wait for cluster to be ready"
-        log_info "  4. Run this script again"
-        exit 1
+        local current_context=$(kubectl config current-context 2>/dev/null || echo "unknown")
+        log_success "Found working Kubernetes cluster: ${current_context}"
+        
+        # Verify we can actually list nodes
+        if kubectl get nodes >/dev/null 2>&1; then
+            log_info "Cluster is healthy and ready to use"
+            return 0
+        else
+            log_warning "Cluster context exists but not accessible. Trying to create new cluster..."
+        fi
+    else
+        log_info "No working Kubernetes cluster found. Creating one..."
     fi
     
-    log_success "Rancher Desktop cluster is ready"
+    # No working cluster found, try to create k3d cluster
+    setup_k3d_cluster
 }
 
-setup_k3s_cluster() {
-    if ! command_exists k3s; then
-        log_info "Installing k3s..."
-        curl -sfL https://get.k3s.io | sh -
+# Setup k3d cluster (lightweight and reliable)
+setup_k3d_cluster() {
+    log_info "Setting up k3d cluster..."
+    
+    # Check if k3d is installed
+    if ! command_exists k3d; then
+        log_info "k3d not found. Installing k3d..."
+        install_k3d
     fi
-
-    log_info "Starting k3s service..."
-    sudo systemctl enable k3s
-    sudo systemctl start k3s
-
-    log_info "Waiting for k3s kubeconfig..."
-    until sudo test -f /etc/rancher/k3s/k3s.yaml; do
+    
+    # Check if cluster already exists
+    if k3d cluster list ${CLUSTER_NAME} >/dev/null 2>&1; then
+        log_info "k3d cluster '${CLUSTER_NAME}' already exists"
+        k3d cluster start ${CLUSTER_NAME} 2>/dev/null || true
+    else
+        log_info "Creating new k3d cluster: ${CLUSTER_NAME}"
+        k3d cluster create ${CLUSTER_NAME} \
+            --port "8443:8443@loadbalancer" \
+            --port "80:80@loadbalancer" \
+            --wait \
+            --timeout 60s
+    fi
+    
+    # Wait for cluster to be ready
+    log_info "Waiting for cluster to be ready..."
+    local retries=30
+    while [ $retries -gt 0 ]; do
+        if kubectl get nodes >/dev/null 2>&1; then
+            log_success "k3d cluster is ready!"
+            return 0
+        fi
+        log_info "Waiting for cluster... (${retries} retries left)"
         sleep 2
+        retries=$((retries - 1))
     done
+    
+    log_error "k3d cluster failed to become ready"
+    return 1
+}
 
-    log_info "Configuring kubeconfig..."
-    mkdir -p $HOME/.kube
-    sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
-    sudo chown $(id -u):$(id -g) $HOME/.kube/config
-
-    export KUBECONFIG=$HOME/.kube/config
-
-    log_info "Waiting for node to be Ready..."
-    kubectl wait --for=condition=Ready nodes --all --timeout=180s
-
-    log_success "k3s cluster is ready"
+# Install k3d if not present
+install_k3d() {
+    log_info "Installing k3d..."
+    
+    case $OS in
+        macos)
+            if command_exists brew; then
+                brew install k3d
+            else
+                curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+            fi
+            ;;
+        linux)
+            curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+            ;;
+        windows)
+            log_error "Please install k3d manually on Windows: https://k3d.io/v5.4.6/#installation"
+            return 1
+            ;;
+    esac
+    
+    # Verify installation
+    if command_exists k3d; then
+        log_success "k3d installed successfully"
+    else
+        log_error "k3d installation failed"
+        return 1
+    fi
 }
 
 # Setup Pulumi

@@ -24,11 +24,7 @@ Spins up a complete Keycloak identity server with:
 - ** Security First**: HTTPS-only access with self-signed certificates
 - ** Full Automation**: One-command deployment and teardown
 - ** Infrastructure as Code**: Pulumi with Go for type-safe infrastructure
-<<<<<<< HEAD
-- ** Multiple K8s Options**: Rancher Desktop (preferred), k3s
-=======
-- ** Multiple K8s Options**: Rancher Desktop (preferred), kind, minikube
->>>>>>> d44bcc1 (updated to use k3d-rancher preferred)
+- ** Multiple K8s Options**: Rancher Desktop/k3d (preferred)
 - ** Security Hardening**: non-root containers, resource limits
 - ** Comprehensive Monitoring**: Health checks, validation scripts, logging
 - ** Production Ready**: PostgreSQL backend, proper secrets management
@@ -74,14 +70,14 @@ cd keycloak-kubernetes-iac
 
 That's it! The script will:
 1. Check if you have kubectl, Pulumi, Go, and Docker
-2. Set up a Kubernetes cluster (tries Rancher Desktop first, falls back to kind)
+2. Set up a Kubernetes cluster (tries Rancher Desktop first, falls back to k3d)
 3. Deploy everything with Pulumi
 4. Show you how to access Keycloak
 
 ## Prerequisites
 
 You need:
-- **Rancher Desktop** (preferred) or **kind** or **minikube**
+- **Rancher Desktop** (preferred) or **k3d** 
 - **kubectl**, **Pulumi**, **Go 1.21+**, **Docker**
 
 Don't have them? Run `./scripts/install-prerequisites.sh` first.
