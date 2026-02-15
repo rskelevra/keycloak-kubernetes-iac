@@ -91,9 +91,20 @@ setup_kubernetes_cluster() {
     setup_k3d_cluster
 }
 
-# Setup k3d cluster (lightweight and reliable)
+# Setup k3d cluster (WSL2 compatible)
 setup_k3d_cluster() {
     log_info "Setting up k3d cluster..."
+    
+    # Detect OS for installation
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        OS="linux"
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        OS="macos"
+    elif [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "msys" ]]; then
+        OS="windows"
+    else
+        OS="linux"  # Default fallback
+    fi
     
     # Check if k3d is installed
     if ! command_exists k3d; then
@@ -101,34 +112,79 @@ setup_k3d_cluster() {
         install_k3d
     fi
     
+    # Force WSL2-friendly paths
+    export HOME="${HOME:-/home/$(whoami)}"
+    mkdir -p ~/.kube
+    
     # Check if cluster already exists
-    if k3d cluster list ${CLUSTER_NAME} >/dev/null 2>&1; then
+    if k3d cluster list | grep -q "${CLUSTER_NAME}"; then
         log_info "k3d cluster '${CLUSTER_NAME}' already exists"
         k3d cluster start ${CLUSTER_NAME} 2>/dev/null || true
+        
+        # Always refresh kubeconfig for existing clusters
+        log_info "Refreshing kubeconfig for existing cluster..."
+        k3d kubeconfig get ${CLUSTER_NAME} > ~/.kube/config 2>/dev/null || true
+        
     else
         log_info "Creating new k3d cluster: ${CLUSTER_NAME}"
+        
+        # Create cluster with explicit kubeconfig handling
         k3d cluster create ${CLUSTER_NAME} \
             --port "8443:8443@loadbalancer" \
             --port "80:80@loadbalancer" \
             --wait \
             --timeout 60s
+        
+        # Get kubeconfig immediately after creation
+        log_info "Setting up kubeconfig..."
+        k3d kubeconfig get ${CLUSTER_NAME} > ~/.kube/config
     fi
     
-    # Wait for cluster to be ready
-    log_info "Waiting for cluster to be ready..."
-    local retries=30
+    # Set kubeconfig environment
+    export KUBECONFIG=~/.kube/config
+    
+    # Quick test - try kubectl immediately with shorter timeout
+    log_info "Testing cluster connectivity..."
+    local retries=10
     while [ $retries -gt 0 ]; do
-        if kubectl get nodes >/dev/null 2>&1; then
+        if kubectl get nodes --request-timeout=10s >/dev/null 2>&1; then
             log_success "k3d cluster is ready!"
+            kubectl get nodes --no-headers | head -3
             return 0
         fi
+        
+        # Try kubeconfig refresh if first few attempts fail
+        if [ $retries -eq 7 ]; then
+            log_info "Refreshing kubeconfig..."
+            k3d kubeconfig get ${CLUSTER_NAME} > ~/.kube/config 2>/dev/null || true
+        fi
+        
         log_info "Waiting for cluster... (${retries} retries left)"
-        sleep 2
+        sleep 3
         retries=$((retries - 1))
     done
     
-    log_error "k3d cluster failed to become ready"
-    return 1
+    # If we get here, try one final kubeconfig fix
+    log_warning "Initial connection failed, trying kubeconfig fix..."
+    k3d kubeconfig get ${CLUSTER_NAME} > ~/.kube/config
+    chmod 600 ~/.kube/config
+    export KUBECONFIG=~/.kube/config
+    
+    # Final test
+    if kubectl get nodes --request-timeout=15s >/dev/null 2>&1; then
+        log_success "k3d cluster is ready after kubeconfig fix!"
+        kubectl get nodes --no-headers | head -3
+        return 0
+    else
+        log_error "Failed to connect to k3d cluster after all attempts"
+        log_info "Debug information:"
+        echo "KUBECONFIG: $KUBECONFIG"
+        echo "Cluster status:"
+        k3d cluster list ${CLUSTER_NAME} || true
+        echo "Kubectl config:"
+        kubectl config current-context 2>/dev/null || echo "No context set"
+        return 1
+    fi
 }
 
 # Install k3d if not present
@@ -263,7 +319,7 @@ display_access_info() {
     echo ""
     echo "=================================================="
     echo ""
-    echo "📝 Additional Information:"
+    echo "📋 Additional Information:"
     echo "   - Namespace: ${NAMESPACE}"
     echo "   - TLS: Self-signed certificate (accept browser warning)"
     echo "   - Database: PostgreSQL (internal)"
@@ -273,9 +329,9 @@ display_access_info() {
     echo "   - Shell access: kubectl exec -it deployment/keycloak -n ${NAMESPACE} -- bash"
     echo "   - Stop port-forward: pkill -f 'kubectl.*port-forward.*keycloak'"
     echo ""
-    echo "🗑️  Cleanup:"
+    echo "🗑️ Cleanup:"
     echo "   - Destroy infrastructure: pulumi destroy --yes"
-    echo "   - Delete cluster: ./scripts/cleanup.sh"
+    echo "   - Delete cluster: k3d cluster delete ${CLUSTER_NAME}"
     echo ""
 }
 

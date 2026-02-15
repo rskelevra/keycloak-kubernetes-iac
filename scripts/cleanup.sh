@@ -82,11 +82,22 @@ cleanup_deployment() {
 
 # Cleanup cluster
 cleanup_cluster() {
-    # Check which cluster type and cleanup accordingly
-    if command -v kind >/dev/null 2>&1 && kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
+    # Check which cluster type and cleanup accordingly (k3d first since it's our primary)
+    if command -v k3d >/dev/null 2>&1 && k3d cluster list | grep -q "${CLUSTER_NAME}"; then
+        log_info "Deleting k3d cluster: ${CLUSTER_NAME}"
+        k3d cluster delete ${CLUSTER_NAME}
+        log_success "k3d cluster deleted"
+        
+        # Clean up any leftover kubeconfig entries
+        log_info "Cleaning up k3d kubeconfig entries..."
+        kubectl config delete-context k3d-${CLUSTER_NAME} 2>/dev/null || true
+        kubectl config delete-cluster k3d-${CLUSTER_NAME} 2>/dev/null || true
+        
+    elif command -v kind >/dev/null 2>&1 && kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
         log_info "Deleting kind cluster: ${CLUSTER_NAME}"
         kind delete cluster --name ${CLUSTER_NAME}
         log_success "Kind cluster deleted"
+        
     elif command -v minikube >/dev/null 2>&1 && minikube status >/dev/null 2>&1; then
         read -p "Do you want to delete the minikube cluster? (y/N): " -n 1 -r
         echo
@@ -97,9 +108,11 @@ cleanup_cluster() {
         else
             log_info "Minikube cluster preserved"
         fi
+        
     elif command -v rancher-desktop >/dev/null 2>&1; then
         log_info "Rancher Desktop detected - cluster cleanup skipped"
         log_warning "Please manually reset Rancher Desktop if needed"
+        
     else
         log_info "No cluster cleanup needed"
     fi
@@ -116,14 +129,45 @@ cleanup_hosts_file() {
     fi
 }
 
+# Cleanup Docker resources (k3d uses Docker containers)
+cleanup_docker_resources() {
+    if command -v docker >/dev/null 2>&1; then
+        log_info "Cleaning up Docker resources..."
+        
+        # Remove any leftover k3d containers
+        local containers=$(docker ps -aq --filter "label=k3d.cluster=${CLUSTER_NAME}" 2>/dev/null || true)
+        if [ -n "$containers" ]; then
+            log_info "Removing k3d containers..."
+            docker rm -f $containers 2>/dev/null || true
+        fi
+        
+        # Remove any leftover k3d networks
+        local networks=$(docker network ls --filter "label=k3d.cluster=${CLUSTER_NAME}" -q 2>/dev/null || true)
+        if [ -n "$networks" ]; then
+            log_info "Removing k3d networks..."
+            docker network rm $networks 2>/dev/null || true
+        fi
+        
+        # Remove any leftover k3d volumes
+        local volumes=$(docker volume ls --filter "label=k3d.cluster=${CLUSTER_NAME}" -q 2>/dev/null || true)
+        if [ -n "$volumes" ]; then
+            log_info "Removing k3d volumes..."
+            docker volume rm $volumes 2>/dev/null || true
+        fi
+        
+        log_success "Docker cleanup completed"
+    fi
+}
+
 # Confirmation prompt
 confirm_cleanup() {
     echo ""
     echo "⚠️  WARNING: This will:"
     echo "   - Destroy all Keycloak infrastructure"
-    echo "   - Delete the Kubernetes cluster (for kind/minikube)"
+    echo "   - Delete the Kubernetes cluster (k3d/kind/minikube)"
     echo "   - Remove port forwarding"
     echo "   - Clean up DNS entries"
+    echo "   - Remove Docker containers/networks/volumes (for k3d)"
     echo ""
     read -p "Are you sure you want to continue? (y/N): " -n 1 -r
     echo
@@ -137,6 +181,7 @@ confirm_cleanup() {
 main() {
     confirm_cleanup
     cleanup_deployment
+    cleanup_docker_resources
 }
 
 # Run main function
